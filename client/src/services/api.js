@@ -24,7 +24,7 @@ export async function submitRegistration(payload) {
   } catch (error) {
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       throw new Error(
-        'Unable to connect to the registration server. Please make sure the backend is running at http://localhost:5000'
+        'Unable to connect to the registration server. Please make sure the backend is running at http://localhost:9000'
       );
     }
     throw error;
