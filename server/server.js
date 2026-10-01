@@ -15,36 +15,48 @@ const app = express();
 
 const PORT = process.env.PORT || 9000;
 
-const CLIENT_URL =
-  process.env.CLIENT_URL || 'http://localhost:3000';
-
-// Allowed origins
-const allowedOrigins = [
-  CLIENT_URL,
+// Allowed origins for CORS (Local and Production)
+const defaultAllowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-]
-  .map((origin) => origin && origin.replace(/\/$/, ''))
+  'https://srijan-2026-one.vercel.app',
+];
+
+// Combine environment variables (CLIENT_URL, ALLOWED_ORIGINS) with defaults
+const envOrigins = [process.env.CLIENT_URL, process.env.ALLOWED_ORIGINS]
+  .filter(Boolean)
+  .flatMap((entry) => entry.split(',').map((origin) => origin.trim()));
+
+const allowedOrigins = Array.from(
+  new Set([...defaultAllowedOrigins, ...envOrigins])
+)
+  .map((origin) => origin.replace(/\/+$/, ''))
   .filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin
+      // Allow requests with no origin (e.g. mobile apps, curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
 
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+
       if (
-        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes(normalizedOrigin) ||
+        normalizedOrigin.endsWith('.vercel.app') ||
         process.env.NODE_ENV !== 'production'
       ) {
         return callback(null, true);
       }
 
-      return callback(new Error('Blocked by CORS policy'));
+      console.warn(`⚠️ [CORS Blocked]: Origin "${origin}" is not in the allowed list.`);
+      return callback(new Error(`Blocked by CORS policy: Origin ${origin} not allowed`));
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 

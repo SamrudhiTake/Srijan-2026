@@ -2,7 +2,21 @@
  * Srijan Backend API Client
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const rawApiUrl = import.meta.env.VITE_API_URL;
+
+/**
+ * Normalize the API base URL:
+ * - If not provided, defaults to '/api' (which is proxied by Vite dev server to localhost:9000)
+ * - If provided without trailing '/api' (e.g. 'https://srijan-2026-ebak.onrender.com'), appends '/api'
+ * - If provided with '/api' (e.g. 'http://localhost:9000/api'), keeps it clean without duplicate slashes
+ */
+const formatApiBase = (url) => {
+  if (!url || !url.trim()) return '/api';
+  const clean = url.trim().replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+};
+
+const API_BASE = formatApiBase(rawApiUrl);
 
 export async function submitRegistration(payload) {
   try {
@@ -24,7 +38,7 @@ export async function submitRegistration(payload) {
   } catch (error) {
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
       throw new Error(
-        'Unable to connect to the registration server. Please make sure the backend is running at http://localhost:9000'
+        `Unable to connect to the backend server (${API_BASE}). Please verify the backend is running and reachable.`
       );
     }
     throw error;
