@@ -26,45 +26,21 @@ mongoose.connection.on('error', (err) => {
 });
 
 /**
- * Automatically sanitizes MongoDB URIs by URL-encoding special characters (like @ or :) in password/user
- */
-export function sanitizeMongoUri(uri) {
-  if (!uri || typeof uri !== 'string') return uri;
-  const match = uri.match(/^(mongodb(?:\+srv)?:\/\/)([^/?#]+)(.*)$/);
-  if (!match) return uri;
-
-  const [, proto, authHost, rest] = match;
-  const lastAt = authHost.lastIndexOf('@');
-  if (lastAt === -1) return uri;
-
-  const auth = authHost.substring(0, lastAt);
-  const host = authHost.substring(lastAt + 1);
-  const colon = auth.indexOf(':');
-  if (colon === -1) return uri;
-
-  const u = auth.substring(0, colon);
-  const p = auth.substring(colon + 1);
-
-  return `${proto}${encodeURIComponent(decodeURIComponent(u))}:${encodeURIComponent(decodeURIComponent(p))}@${host}${rest}`;
-}
-
-/**
  * Resilient SRV Resolver for Node.js environments where Windows/ISP DNS fails SRV lookups
  */
 async function resolveMongoUri(uri) {
   if (!uri.startsWith('mongodb+srv://')) return uri;
 
   try {
-    const cleanUri = sanitizeMongoUri(uri);
-    const match = cleanUri.match(/^mongodb\+srv:\/\/([^:]+):([^@]+)@([^/?#]+)(?:\/([^?]*))?(?:\?(.*))?$/);
-    if (!match) return cleanUri;
+    const match = uri.match(/^mongodb\+srv:\/\/([^:]+):([^@]+)@([^/?#]+)(?:\/([^?]*))?(?:\?(.*))?$/);
+    if (!match) return uri;
 
     const [, user, pass, host, db = '', query = ''] = match;
     const resolver = new dns.Resolver();
     resolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
 
     const srvRecords = await resolver.resolveSrv('_mongodb._tcp.' + host);
-    if (!srvRecords || srvRecords.length === 0) return cleanUri;
+    if (!srvRecords || srvRecords.length === 0) return uri;
 
     const hostList = srvRecords.map((r) => `${r.name}:${r.port}`).join(',');
     const params = new URLSearchParams(query);
@@ -80,13 +56,13 @@ async function resolveMongoUri(uri) {
 }
 
 export const connectDB = async () => {
+  const defaultLocalUri = 'mongodb://127.0.0.1:27017/SrijanRegistration';
   const rawUri = process.env.MONGO_URI;
-  const uri = rawUri ? sanitizeMongoUri(rawUri.trim()) : '';
+  let uri = rawUri && rawUri.trim() ? rawUri.trim() : defaultLocalUri;
 
-  if (!uri || uri.includes('<username>') || uri.includes('user:pass@cluster')) {
-    console.warn('\n⚠️ [MongoDB] MONGO_URI is not configured yet with valid credentials.');
-    console.warn('👉 Please set your MongoDB Atlas connection string in Environment Variables (server/.env or Vercel Settings)\n');
-    return false;
+  if (uri.includes('<username>') || uri.includes('user:pass@cluster')) {
+    console.warn('\n⚠️ [MongoDB] MONGO_URI has placeholder credentials. Defaulting to local MongoDB...');
+    uri = defaultLocalUri;
   }
 
   // If already connected, reuse connection
@@ -97,11 +73,12 @@ export const connectDB = async () => {
 
   if (!cached.promise) {
     const opts = {
-      serverSelectionTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 5000,
     };
 
     cached.promise = (async () => {
       let connectionUri = uri;
+
       if (uri.startsWith('mongodb+srv://')) {
         try {
           const conn = await mongoose.connect(uri, opts);
@@ -111,17 +88,48 @@ export const connectDB = async () => {
         } catch (srvError) {
           if (srvError.message.includes('querySrv') || srvError.code === 'ECONNREFUSED') {
             console.log('🔄 [MongoDB] Resolving Atlas cluster replica set nodes via fallback DNS...');
-            connectionUri = await resolveMongoUri(uri);
+            try {
+              connectionUri = await resolveMongoUri(uri);
+              const conn = await mongoose.connect(connectionUri, opts);
+              isConnected = true;
+              console.log(`✅ MongoDB Atlas Connected ---> DB: ${conn.connection.name}`);
+              return conn;
+            } catch (fallbackError) {
+              console.warn(`⚠️ [MongoDB Atlas Fallback Error]: ${fallbackError.message}`);
+            }
           } else {
+            console.warn(`⚠️ [MongoDB Atlas Error]: ${srvError.message}`);
+          }
+
+          // Fallback to local MongoDB if Atlas connection fails
+          console.log(`🔄 [MongoDB] Falling back to local MongoDB (${defaultLocalUri})...`);
+          try {
+            const localConn = await mongoose.connect(defaultLocalUri, opts);
+            isConnected = true;
+            console.log(`✅ [MongoDB Local Connected] ---> DB: ${localConn.connection.name}`);
+            return localConn;
+          } catch (localError) {
+            console.error(`❌ [MongoDB Local Error]: ${localError.message}`);
             throw srvError;
           }
         }
       }
 
-      const conn = await mongoose.connect(connectionUri, opts);
-      isConnected = true;
-      console.log(`✅ MongoDB Atlas Connected ---> DB: ${conn.connection.name}`);
-      return conn;
+      try {
+        const conn = await mongoose.connect(connectionUri, opts);
+        isConnected = true;
+        console.log(`✅ MongoDB Connected ---> DB: ${conn.connection.name}`);
+        return conn;
+      } catch (err) {
+        if (connectionUri !== defaultLocalUri) {
+          console.warn(`⚠️ [MongoDB Error]: ${err.message}. Trying local MongoDB (${defaultLocalUri})...`);
+          const localConn = await mongoose.connect(defaultLocalUri, opts);
+          isConnected = true;
+          console.log(`✅ [MongoDB Local Connected] ---> DB: ${localConn.connection.name}`);
+          return localConn;
+        }
+        throw err;
+      }
     })();
   }
 

@@ -5,18 +5,6 @@ Official full-stack MERN repository for **SRIJAN**, a college-level technical fe
 
 ---
 
-## 🌐 Live Deployments
-
-- **Frontend (Vercel)**: [https://srijan-2026-one.vercel.app](https://srijan-2026-one.vercel.app)
-- **Backend (Render)**: [https://srijan-2026-ebak.onrender.com](https://srijan-2026-ebak.onrender.com)
-- **Backend Health Check**: [https://srijan-2026-ebak.onrender.com/api/health](https://srijan-2026-ebak.onrender.com/api/health)
-
-### Local Development URLs
-- **Frontend**: [http://localhost:3000](http://localhost:3000)
-- **Backend**: [http://localhost:9000](http://localhost:9000)
-
----
-
 ## 🚀 Full Tech Stack
 
 ### Frontend (`client/`)
@@ -126,9 +114,9 @@ Follow these steps to connect your MongoDB Atlas cloud database:
 1. Open `server/.env` in your editor.
 2. Paste your connection string:
    ```env
-   PORT=9000
-   CLIENT_URL=https://srijan-2026-one.vercel.app
-   MONGO_URI=mongodb+srv://samrudhitake31_db_user:srijan%4012345@cluster0.4bgusfj.mongodb.net/SrijanRegistration
+   PORT=5000
+   CLIENT_URL=http://localhost:3000
+   MONGO_URI=mongodb+srv://srijan_admin:YourPassword123@cluster0.abcde.mongodb.net/srijan_db?retryWrites=true&w=majority
    ```
 3. Save the file.
 
@@ -136,14 +124,14 @@ Follow these steps to connect your MongoDB Atlas cloud database:
 
 ## 🏃 Running the Full MERN Stack
 
-### 1. Start the Backend Server (Port 9000)
+### 1. Start the Backend Server (Port 5000)
 ```bash
 cd server
 npm install
 npm start
 ```
 > The server will automatically connect to MongoDB Atlas and auto-seed the 6 official Srijan events if the collection is empty.
-> Health check: `http://localhost:9000/api/health` or `https://srijan-2026-ebak.onrender.com/api/health`
+> Health check: `http://localhost:5000/api/health`
 
 ### 2. Start the Frontend Client (Port 3000)
 ```bash
