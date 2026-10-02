@@ -1,6 +1,6 @@
 import { Event } from '../models/Event.js';
 import { initialEvents } from '../data/seedData.js';
-import { checkDBConnection } from '../config/db.js';
+import { connectDB, checkDBConnection } from '../config/db.js';
 
 /**
  * Get all available events
@@ -8,6 +8,10 @@ import { checkDBConnection } from '../config/db.js';
  */
 export const getEvents = async (req, res, next) => {
   try {
+    if (!checkDBConnection()) {
+      await connectDB();
+    }
+
     if (!checkDBConnection()) {
       // Fallback to static seed data if DB is temporarily not connected
       return res.status(200).json({
@@ -17,6 +21,7 @@ export const getEvents = async (req, res, next) => {
         data: initialEvents,
       });
     }
+
 
     let events = await Event.find().sort({ slug: 1 }).lean();
 
@@ -46,9 +51,14 @@ export const getEventById = async (req, res, next) => {
     const { id } = req.params;
 
     if (!checkDBConnection()) {
+      await connectDB();
+    }
+
+    if (!checkDBConnection()) {
       const fallback = initialEvents.find(
         (e) => e.slug === id.toLowerCase() || e.slug === `event-${id}`
       );
+
       if (!fallback) {
         return res.status(404).json({
           success: false,

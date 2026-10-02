@@ -60,10 +60,22 @@ app.use(
   })
 );
 
+// Body parser
 app.use(express.json());
 
-// API Health Check
-app.get('/api/health', (req, res) => {
+// Ensure DB connection on each incoming request (vital for serverless cold starts on Vercel)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('⚠️ [MongoDB Middleware Connection Check Failed]:', err.message);
+  }
+  next();
+});
+
+
+// API Health Check (supports both /api/health and /health)
+app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({
     status: 'online',
     fest: 'SRIJAN 2026',
@@ -72,16 +84,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/api/events', eventRoutes);
-app.use('/api/registrations', registrationRoutes);
+// API Routes (supports both /api/* and root paths)
+app.use(['/events', '/api/events'], eventRoutes);
+app.use(['/registrations', '/api/registrations'], registrationRoutes);
 
 // Error Handling
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server and connect to MongoDB
-const startServer = async () => {
+// Start server and connect to MongoDB (when run as standalone server)
+export const startServer = async () => {
   try {
     await connectDB();
 
@@ -101,4 +113,9 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// If executed directly in standalone node / dev mode (not imported by Vercel serverless)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

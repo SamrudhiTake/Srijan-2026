@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 import dns from 'dns/promises';
 
+// Global cache for serverless environments (e.g. Vercel) to prevent multiple connections
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
 let isConnected = false;
 
 // Track connection lifecycle
@@ -10,10 +16,12 @@ mongoose.connection.on('connected', () => {
 
 mongoose.connection.on('disconnected', () => {
   isConnected = false;
+  if (cached) cached.conn = null;
 });
 
 mongoose.connection.on('error', (err) => {
   isConnected = false;
+  if (cached) cached.conn = null;
   console.error(`❌ [MongoDB Runtime Error]: ${err.message}`);
 });
 
@@ -53,43 +61,60 @@ export const connectDB = async () => {
 
   if (!uri || uri.includes('<username>') || uri.includes('user:pass@cluster')) {
     console.warn('\n⚠️ [MongoDB] MONGO_URI is not configured yet with valid credentials.');
-    console.warn('👉 Please set your MongoDB Atlas connection string in server/.env\n');
+    console.warn('👉 Please set your MongoDB Atlas connection string in Environment Variables (server/.env or Vercel Settings)\n');
     return false;
   }
 
-  try {
-    // If it's an SRV connection, attempt direct connection first; if it fails due to querySrv, resolve via fallback DNS
-    let connectionUri = uri;
-    if (uri.startsWith('mongodb+srv://')) {
-      try {
-        const conn = await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
-        isConnected = true;
-        console.log(`✅ [MongoDB Atlas Connected] Host: ${conn.connection.host} | DB: ${conn.connection.name}`);
-        return true;
-      } catch (srvError) {
-        if (srvError.message.includes('querySrv') || srvError.code === 'ECONNREFUSED') {
-          console.log('🔄 [MongoDB] Resolving Atlas cluster replica set nodes via fallback DNS...');
-          connectionUri = await resolveMongoUri(uri);
-        } else {
-          throw srvError;
+  // If already connected, reuse connection
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    isConnected = true;
+    return true;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      serverSelectionTimeoutMS: 10000,
+    };
+
+    cached.promise = (async () => {
+      let connectionUri = uri;
+      if (uri.startsWith('mongodb+srv://')) {
+        try {
+          const conn = await mongoose.connect(uri, opts);
+          isConnected = true;
+          console.log(`✅ [MongoDB Atlas Connected] Host: ${conn.connection.host} | DB: ${conn.connection.name}`);
+          return conn;
+        } catch (srvError) {
+          if (srvError.message.includes('querySrv') || srvError.code === 'ECONNREFUSED') {
+            console.log('🔄 [MongoDB] Resolving Atlas cluster replica set nodes via fallback DNS...');
+            connectionUri = await resolveMongoUri(uri);
+          } else {
+            throw srvError;
+          }
         }
       }
-    }
 
-    const conn = await mongoose.connect(connectionUri, {
-      serverSelectionTimeoutMS: 15000,
-    });
+      const conn = await mongoose.connect(connectionUri, opts);
+      isConnected = true;
+      console.log(`✅ MongoDB Atlas Connected ---> DB: ${conn.connection.name}`);
+      return conn;
+    })();
+  }
+
+  try {
+    cached.conn = await cached.promise;
     isConnected = true;
-    console.log(`✅ MongoDB Atlas Connected ---> DB: ${conn.connection.name}`);
     return true;
   } catch (error) {
-    console.error(`❌ [MongoDB Connection Error]: ${error.message}`);
+    cached.promise = null;
     isConnected = false;
+    console.error(`❌ [MongoDB Connection Error]: ${error.message}`);
     return false;
   }
 };
 
 export const checkDBConnection = () => {
-  return isConnected && mongoose.connection.readyState === 1;
+  return mongoose.connection.readyState === 1;
 };
+
 

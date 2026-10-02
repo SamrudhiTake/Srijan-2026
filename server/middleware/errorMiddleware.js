@@ -3,6 +3,7 @@
  * Converts MongoDB, Mongoose, and server errors into clean, user-friendly JSON
  */
 export const notFoundHandler = (req, res, next) => {
+  // Always return JSON, never HTML — this prevents the "Unexpected token" error on the client
   res.status(404).json({
     success: false,
     message: `Resource not found at ${req.originalUrl}`,
@@ -11,6 +12,11 @@ export const notFoundHandler = (req, res, next) => {
 
 export const errorHandler = (err, req, res, next) => {
   console.error('💥 [Server Error]:', err.stack || err.message || err);
+
+  // Prevent sending a response if headers are already sent
+  if (res.headersSent) {
+    return next(err);
+  }
 
   let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
   let message = err.message || 'An unexpected server error occurred';
@@ -35,6 +41,13 @@ export const errorHandler = (err, req, res, next) => {
     message = messages.join('. ');
   }
 
+  // Handle MongoDB connection/timeout errors
+  if (err.name === 'MongoServerSelectionError' || err.name === 'MongoNetworkError') {
+    statusCode = 503;
+    message = 'Database connection failed. The server cannot reach MongoDB. Please try again later.';
+  }
+
+  // Always set Content-Type to JSON explicitly
   res.status(statusCode).json({
     success: false,
     message,
